@@ -23,6 +23,7 @@
 #define XXH_memcpy ZSTD_memcpy
 #define XXH_memset ZSTD_memset
 
+
 /*!
  * @mainpage xxHash
  *
@@ -231,7 +232,7 @@
  * xxHash prototypes and implementation
  */
 
-#if defined (__cplusplus)
+#if defined(__cplusplus) && !defined(XXH_NO_EXTERNC_GUARD)
 extern "C" {
 #endif
 
@@ -7328,6 +7329,6 @@ XXH3_generateSecret_fromSeed(XXH_NOESCAPE void* secretBuffer, XXH64_hash_t seed)
 #endif  /* XXH_IMPLEMENTATION */
 
 
-#if defined (__cplusplus)
+#if defined (__cplusplus) && !defined(XXH_NO_EXTERNC_GUARD)
 } /* extern "C" */
 #endif
