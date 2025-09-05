@@ -1132,17 +1132,20 @@ ZSTD_row_getMatchMask(const BYTE* const tagRow, const BYTE tag, const U32 headGr
 
     return ZSTD_row_getSSEMask(rowEntries / 16, src, tag, headGrouped);
 
-# elif defined(ZSTD_ARCH_ARM_NEON)
+#elif defined(ZSTD_ARCH_RISCV_RVV) && (__riscv_xlen == 64)
+
+    return ZSTD_row_getRVVMask(rowEntries, src, tag, headGrouped);
+
+#else
+
+#if defined(ZSTD_ARCH_ARM_NEON)
   /* This NEON path only works for little endian - otherwise use SWAR below */
     if (MEM_isLittleEndian()) {
         return ZSTD_row_getNEONMask(rowEntries, src, tag, headGrouped);
     }
 
-# elif defined(ZSTD_ARCH_RISCV_RVV) && (__riscv_xlen == 64)
 
-    return ZSTD_row_getRVVMask(rowEntries, src, tag, headGrouped);
-
-#else
+#endif
     /* SWAR */
     {   const int chunkSize = sizeof(size_t);
         const size_t shiftAmount = ((chunkSize * 8) - chunkSize);
