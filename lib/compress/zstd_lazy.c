@@ -1050,67 +1050,27 @@ ZSTD_row_getNEONMask(const U32 rowEntries, const BYTE* const src, const BYTE tag
     }
 }
 #endif
-
 #if defined(ZSTD_ARCH_RISCV_RVV) && (__riscv_xlen == 64)
 FORCE_INLINE_TEMPLATE ZSTD_VecMask
-ZSTD_row_getRVVMask(const U32 rowEntries, const BYTE* const src, const BYTE tag, const U32 headGrouped)
+ZSTD_row_getRVVMask(int nbChunks, const BYTE* const src, const BYTE tag, const U32 head)
 {
-    ZSTD_VecMask matches = 0;
+    U16 matches[4] = {0};
+    int i;
+    assert(nbChunks == 1 || nbChunks == 2 || nbChunks == 4);
 
-    if (rowEntries == 16) {
-        size_t vl = 16;
-        vuint8m1_t chunk_v8 = __riscv_vle8_v_u8m1(src, vl);
-        vuint16m2_t chunk_v16 = __riscv_vwaddu_vx_u16m2(chunk_v8, 0, vl);
-        vbool8_t cmp_mask = __riscv_vmseq_vx_u16m2_b8(chunk_v16, tag, vl);
-	
-        vuint16m2_t one_v = __riscv_vmv_v_x_u16m2(1, vl);
-        vuint16m2_t index_v = __riscv_vid_v_u16m2(vl);
-        vuint16m2_t powers_of_2_v = __riscv_vsll_vv_u16m2(one_v, index_v, vl);
-        
-        vuint16m2_t v_zero = __riscv_vmv_v_x_u16m2(0, vl);
-        vuint16m2_t selected_bits_v = __riscv_vmerge_vvm_u16m2(powers_of_2_v, v_zero, cmp_mask, vl);
+    size_t vl = vsetvl_e8m1(16);
 
-	vuint16m1_t reduction_v = __riscv_vredor_vs_u16m2_u16m1(selected_bits_v, __riscv_vmv_s_x_u16m1(0, vl), vl);
-matches = __riscv_vmv_x_s_u16m1_u16(reduction_v);
-
-    } else if (rowEntries == 32) {
-        size_t vl = 32;
-        vuint8m1_t chunk_v8 = __riscv_vle8_v_u8m1(src, vl);
-        /* Widen in two steps: 8-bit -> 16-bit, then 16-bit -> 32-bit */
-        vuint16m2_t chunk_v16 = __riscv_vwaddu_vx_u16m2(chunk_v8, 0, vl);
-        vuint32m4_t chunk_v32 = __riscv_vwaddu_vx_u32m4(chunk_v16, 0, vl);
-        vbool8_t cmp_mask = __riscv_vmseq_vx_u32m4_b8(chunk_v32, tag, vl);
-
-        vuint32m4_t one_v = __riscv_vmv_v_x_u32m4(1, vl);
-        vuint32m4_t index_v = __riscv_vid_v_u32m4(vl);
-        vuint32m4_t powers_of_2_v = __riscv_vsll_vv_u32m4(one_v, index_v, vl);
-
-        vuint32m4_t v_zero = __riscv_vmv_v_x_u32m4(0, vl);
-        vuint32m4_t selected_bits_v = __riscv_vmerge_vvm_u32m4(powers_of_2_v, v_zero, cmp_mask, vl);
-        
-vuint32m1_t reduction_v = __riscv_vredor_vs_u32m4_u32m1(selected_bits_v, __riscv_vmv_s_x_u32m1(0, vl), vl);
-matches = __riscv_vmv_x_s_u32m1_u32(reduction_v);
-    } else { /* rowEntries == 64 */
-        size_t vl = 64;
-        vuint8m1_t chunk_v8 = __riscv_vle8_v_u8m1(src, vl);
-        /* Widen in three steps: 8 -> 16 -> 32 -> 64 */
-        vuint16m2_t chunk_v16 = __riscv_vwaddu_vx_u16m2(chunk_v8, 0, vl);
-        vuint32m4_t chunk_v32 = __riscv_vwaddu_vx_u32m4(chunk_v16, 0, vl);
-        vuint64m8_t chunk_v64 = __riscv_vwaddu_vx_u64m8(chunk_v32, 0, vl);
-        vbool8_t cmp_mask = __riscv_vmseq_vx_u64m8_b8(chunk_v64, tag, vl);
-
-        vuint64m8_t one_v = __riscv_vmv_v_x_u64m8(1, vl);
-        vuint64m8_t index_v = __riscv_vid_v_u64m8(vl);
-        vuint64m8_t powers_of_2_v = __riscv_vsll_vv_u64m8(one_v, index_v, vl);
-
-        vuint64m8_t v_zero = __riscv_vmv_v_x_u64m8(0, vl);
-        vuint64m8_t selected_bits_v = __riscv_vmerge_vvm_u64m8(powers_of_2_v, v_zero, cmp_mask, vl);
-
-vuint64m1_t reduction_v = __riscv_vredor_vs_u64m8_u64m1(selected_bits_v, __riscv_vmv_s_x_u64m1(0, vl), vl);
-matches = __riscv_vmv_x_s_u64m1_u64(reduction_v);
+    for (i = 0; i < nbChunks; i++) {
+        vuint8m1_t chunk = __riscv_vle8_v_u8m1((const uint8_t*)(src + 16 * i), vl);
+        vbool8_t equalMask = __riscv_vmseq_vx_u8m1_b8(chunk, tag, vl);
+        __riscv_vsm_v_b8((BYTE*)&matches[i], equalMask, vl);
     }
+    
+    if (nbChunks == 1) return ZSTD_rotateRight_U16(matches[0], head);
+    if (nbChunks == 2) return ZSTD_rotateRight_U32((U32)matches[1] << 16 | (U32)matches[0], head);
+    assert(nbChunks == 4);
+    return ZSTD_rotateRight_U64((U64)matches[3] << 48 | (U64)matches[2] << 32 | (U64)matches[1] << 16 | (U64)matches[0], head);
 
-    return ZSTD_rotateRight_U64(matches, headGrouped);
 }
 #endif
 
